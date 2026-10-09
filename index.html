@@ -1,0 +1,1296 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pomodoro">
+<meta name="theme-color" content="#070b14">
+<title>Pomodoro</title>
+<style>
+  /* ============================================================
+     ROOT TOKENS
+     ============================================================ */
+  :root{
+    --font-sans: -apple-system, "SF Pro Display", "Inter", system-ui, sans-serif;
+    --bg-base: #070b14;
+    --glass-fill: rgba(255,255,255,0.08);
+    --glass-fill-strong: rgba(255,255,255,0.12);
+    --glass-border: rgba(255,255,255,0.16);
+    --glass-highlight: rgba(255,255,255,0.35);
+    --text-primary: #ffffff;
+    --text-muted: rgba(255,255,255,0.6);
+    --text-faint: rgba(255,255,255,0.38);
+    --radius-lg: 28px;
+    --radius-md: 20px;
+    --radius-sm: 14px;
+    --motion-fast: 180ms;
+    --motion-med: 400ms;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+
+  /* Retuned for the photo collages: muted, cinematic B&W-friendly tones
+     instead of the earlier saturated neon accents, so the photography
+     reads first and the color is a quiet accent on top of it. Short and
+     Long Break share one "rest" identity (one photo set was given for
+     both), while duration/labels stay independently configurable. */
+  [data-phase="focus"]{
+    --accent-1: #c9793f;
+    --accent-2: #9c3b2e;
+    --accent-highlight: #f2d9b8;
+    --blob-1: #c9793f;
+    --blob-2: #9c3b2e;
+    /* Phone-width default: scattered full photos (see assets/img/mobile). */
+    --phase-bg-image: url('assets/img/mobile/focus.jpg');
+  }
+  [data-phase="short"], [data-phase="long"]{
+    --accent-1: #6f8faf;
+    --accent-2: #3d5570;
+    --accent-highlight: #d9e6f2;
+    --blob-1: #6f8faf;
+    --blob-2: #3d5570;
+    --phase-bg-image: url('assets/img/mobile/rest.jpg');
+  }
+  /* Wide viewports: swap in the finished desktop collage backgrounds. */
+  @media (min-width: 900px){
+    [data-phase="focus"]{ --phase-bg-image: url('assets/img/desktop/focus.jpg'); }
+    [data-phase="short"], [data-phase="long"]{ --phase-bg-image: url('assets/img/desktop/rest.jpg'); }
+  }
+
+  /* ============================================================
+     RESET / BASE
+     ============================================================ */
+  *,*::before,*::after{ box-sizing: border-box; }
+  html,body{
+    height:100%;
+    margin:0;
+    overscroll-behavior:none;
+  }
+  body{
+    background: var(--bg-base);
+    /* A soft top/bottom scrim layered over the photo collage, so header
+       text and the timer ring stay legible no matter which part of the
+       image lands there. */
+    background-image:
+      linear-gradient(180deg, rgba(5,7,12,0.42), rgba(5,7,12,0.06) 30%, rgba(5,7,12,0.12) 58%, rgba(5,7,12,0.68) 100%),
+      var(--phase-bg-image);
+    background-size: cover, cover;
+    background-position: center, center;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button{
+    font-family: inherit;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+
+  /* ============================================================
+     BACKDROP: blobs + film grain
+     ============================================================ */
+  .blob{
+    position:fixed;
+    pointer-events:none;
+    border-radius:50%;
+    filter: blur(90px);
+    opacity:0.22;
+    mix-blend-mode: soft-light;
+    z-index:0;
+    transition: background-color var(--motion-med) ease, opacity var(--motion-med) ease;
+    will-change: background-color;
+  }
+  .blob-1{
+    width:70vmax; height:40vmax;
+    top:-15vmax; left:-20vmax;
+    background-color: var(--blob-1);
+    transform: rotate(-18deg);
+  }
+  .blob-2{
+    width:60vmax; height:36vmax;
+    bottom:-18vmax; right:-18vmax;
+    background-color: var(--blob-2);
+    transform: rotate(14deg);
+  }
+  .grain{
+    position:fixed; inset:0;
+    z-index:1;
+    pointer-events:none;
+    opacity:0.07;
+    mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  /* ============================================================
+     LAYOUT
+     ============================================================ */
+  .app{
+    position:relative;
+    z-index:2;
+    min-height:100vh;
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+    padding: calc(var(--safe-t) + 18px) calc(var(--safe-r) + 18px) calc(var(--safe-b) + 18px) calc(var(--safe-l) + 18px);
+  }
+
+  .app-header{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .app-title{
+    margin:0;
+    font-size: clamp(20px, 5vw, 24px);
+    font-weight:700;
+    color: var(--accent-1);
+    letter-spacing: -0.01em;
+    transition: color var(--motion-med) ease;
+    text-shadow: 0 1px 10px rgba(0,0,0,0.55);
+  }
+  .app-subtitle{
+    margin:4px 0 0;
+    font-size:13px;
+    color: var(--text-muted);
+    font-weight:400;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.55);
+  }
+
+  .icon-btn{
+    width:44px; height:44px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%;
+    background: var(--glass-fill);
+    border:1px solid var(--glass-border);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    cursor:pointer;
+    transition: transform var(--motion-fast) ease, background var(--motion-fast) ease;
+  }
+  .icon-btn:active{ transform: scale(0.96); }
+  .icon-btn svg{ width:20px; height:20px; }
+  .icon-btn.active{
+    background: linear-gradient(160deg, var(--accent-1), var(--accent-2));
+    border-color: rgba(255,255,255,0.3);
+  }
+  .header-actions{ display:flex; align-items:center; gap:10px; }
+
+  main.timer-wrap{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: clamp(20px, 4vh, 32px);
+    padding: 12px 0;
+  }
+
+  /* ============================================================
+     RING
+     ============================================================ */
+  .ring-wrap{
+    position:relative;
+    width: min(78vw, 420px);
+    height: min(78vw, 420px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ring{ width:100%; height:100%; overflow:visible; }
+  .ring-outer{
+    fill:none;
+    stroke: rgba(255,255,255,0.14);
+    stroke-width:8;
+  }
+  .ring-progress{
+    fill:none;
+    stroke: url(#ringGradient);
+    stroke-width:5;
+    stroke-linecap:round;
+    filter: drop-shadow(0 0 10px var(--accent-1));
+    transition: stroke var(--motion-med) ease;
+  }
+  .ring-marker{
+    fill: var(--accent-highlight);
+    filter: drop-shadow(0 0 6px var(--accent-2));
+  }
+  .ring-center{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    border-radius:50%;
+    background: radial-gradient(circle at 50% 35%, rgba(10,12,18,0.38), rgba(10,12,18,0.14) 60%, rgba(10,12,18,0.05) 85%);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    text-shadow: 0 2px 16px rgba(0,0,0,0.5);
+  }
+  .digits{
+    font-size: clamp(48px, 14vw, 72px);
+    font-weight:200;
+    letter-spacing:0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height:1;
+  }
+  .phase-label{
+    margin-top:10px;
+    font-size:14px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color: var(--text-muted);
+    font-weight:500;
+  }
+
+  /* ============================================================
+     CYCLE PILL
+     ============================================================ */
+  .cycle-pill{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:10px 18px;
+    border-radius:999px;
+    background: var(--glass-fill);
+    border:1px solid var(--glass-border);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+  }
+  .dot{
+    width:10px; height:10px;
+    border-radius:50%;
+    background: rgba(255,255,255,0.25);
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+    transition: background var(--motion-fast) ease, transform var(--motion-fast) ease;
+  }
+  .dot.current{
+    background: var(--accent-1);
+    transform: scale(1.35);
+    box-shadow: 0 0 8px var(--accent-1);
+  }
+  .dot.completed{
+    background: var(--accent-2);
+  }
+  .dot.completed::after{
+    content:"";
+    position:absolute;
+    width:4px; height:7px;
+    border-right:1.5px solid rgba(0,0,0,0.55);
+    border-bottom:1.5px solid rgba(0,0,0,0.55);
+    transform: rotate(45deg) translate(-1px,-2px);
+  }
+
+  /* ============================================================
+     CONTROLS
+     ============================================================ */
+  .controls{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap: clamp(20px, 6vw, 36px);
+  }
+  .ctrl-btn{
+    border-radius:50%;
+    border:1px solid var(--glass-border);
+    background: var(--glass-fill);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    user-select:none;
+    -webkit-user-select:none;
+    transition: transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+  }
+  .ctrl-btn:active{ transform: scale(0.96); }
+  .ctrl-btn:focus-visible{ outline:2px solid var(--accent-highlight); outline-offset:3px; }
+  .ctrl-small{
+    width:52px; height:52px;
+  }
+  .ctrl-small svg{ width:20px; height:20px; }
+  .ctrl-large{
+    width:82px; height:82px;
+    background: linear-gradient(160deg, var(--accent-1), var(--accent-2));
+    border:1px solid rgba(255,255,255,0.3);
+    box-shadow: 0 8px 30px -6px var(--accent-1), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .ctrl-large svg{ width:30px; height:30px; }
+
+  /* ============================================================
+     SETTINGS OVERLAY
+     ============================================================ */
+  .settings-overlay{
+    position:fixed; inset:0;
+    z-index:10;
+    background: rgba(2,4,10,0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+  }
+  .settings-overlay[hidden]{ display:none; }
+  .settings-sheet{
+    width:100%;
+    max-height:86vh;
+    overflow-y:auto;
+    background: rgba(15,18,28,0.85);
+    border:1px solid var(--glass-border);
+    border-bottom:none;
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 18px 20px calc(24px + var(--safe-b));
+    animation: sheet-in var(--motion-med) ease;
+  }
+  @keyframes sheet-in{
+    from{ transform: translateY(100%); }
+    to{ transform: translateY(0); }
+  }
+  @media (min-width: 640px){
+    .settings-overlay{ align-items:center; }
+    .settings-sheet{
+      width:440px;
+      max-height:80vh;
+      border-radius: var(--radius-lg);
+      border-bottom:1px solid var(--glass-border);
+      animation: modal-in var(--motion-med) ease;
+    }
+    @keyframes modal-in{
+      from{ opacity:0; transform: translateY(16px) scale(0.98); }
+      to{ opacity:1; transform: translateY(0) scale(1); }
+    }
+  }
+  .settings-header{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:8px;
+  }
+  .settings-header h2{ margin:0; font-size:18px; font-weight:700; }
+
+  .settings-section{
+    padding:16px 0;
+    border-top:1px solid rgba(255,255,255,0.08);
+  }
+  .settings-section:first-of-type{ border-top:none; }
+  .settings-section h3{
+    margin:0 0 10px;
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color: var(--text-muted);
+    display:flex; align-items:center; gap:8px;
+    font-weight:600;
+  }
+  .settings-section.disabled{ opacity:0.45; }
+  .badge{
+    font-size:10px;
+    text-transform:none;
+    letter-spacing:0;
+    background: rgba(255,255,255,0.1);
+    padding:2px 8px;
+    border-radius:999px;
+    font-weight:500;
+  }
+
+  .duration-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 0;
+  }
+  .duration-row .d-label{ font-size:15px; font-weight:500; }
+  .duration-row .d-value{
+    font-size:13px; color: var(--text-muted);
+    min-width:60px; text-align:center;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepper{ display:flex; align-items:center; gap:10px; }
+  .step-btn{
+    width:44px; height:44px;
+    border-radius:50%;
+    border:1px solid var(--glass-border);
+    background: var(--glass-fill);
+    font-size:19px; line-height:1;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .step-btn:active{ transform: scale(0.94); }
+  .step-btn:disabled{ opacity:0.3; cursor:not-allowed; }
+
+  .btn-text{
+    margin-top:6px;
+    background:none; border:none;
+    color: var(--accent-2);
+    font-size:14px; font-weight:600;
+    cursor:pointer;
+    padding:8px 0;
+  }
+
+  .chime-option{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 0;
+    cursor:pointer;
+  }
+  .chime-option .radio{
+    flex-shrink:0;
+    width:18px; height:18px;
+    border-radius:50%;
+    border:1.5px solid var(--glass-border);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .chime-option .radio::after{
+    content:"";
+    width:9px; height:9px;
+    border-radius:50%;
+    background: var(--accent-1);
+    opacity:0;
+    transition: opacity var(--motion-fast) ease;
+  }
+  .chime-option.selected .radio::after{ opacity:1; }
+  .chime-option .c-name{ font-size:14px; }
+
+  /* ============================================================
+     REDUCED MOTION
+     ============================================================ */
+  @media (prefers-reduced-motion: reduce){
+    .blob, .ctrl-btn, .icon-btn, .dot, .app-title, .ring-progress{ transition:none !important; }
+    .settings-sheet{ animation:none !important; }
+  }
+</style>
+</head>
+<body data-phase="focus">
+
+  <div class="grain" aria-hidden="true"></div>
+  <div class="blob blob-1" aria-hidden="true"></div>
+  <div class="blob blob-2" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="app-header">
+      <div>
+        <h1 class="app-title">Pomodoro</h1>
+        <p class="app-subtitle" id="pomodoroCount">0 pomodoros today</p>
+      </div>
+      <div class="header-actions">
+        <button id="musicBtn" class="icon-btn" aria-label="Pause background music" aria-pressed="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <button id="menuBtn" class="icon-btn" aria-label="Open settings" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="timer-wrap">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 300 300">
+          <defs>
+            <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="var(--accent-1)"/>
+              <stop offset="100%" stop-color="var(--accent-2)"/>
+            </linearGradient>
+          </defs>
+          <circle class="ring-outer" cx="150" cy="150" r="140"/>
+          <circle class="ring-progress" id="ringProgress" cx="150" cy="150" r="122" transform="rotate(-90 150 150)"/>
+          <circle class="ring-marker" id="ringMarker" cx="150" cy="28" r="6"/>
+        </svg>
+        <div class="ring-center">
+          <div class="digits" id="digits">25:00</div>
+          <div class="phase-label" id="phaseLabel">Focus</div>
+        </div>
+      </div>
+
+      <div class="cycle-pill" id="cyclePill" aria-hidden="true">
+        <span class="dot" data-n="1"></span>
+        <span class="dot" data-n="2"></span>
+        <span class="dot" data-n="3"></span>
+        <span class="dot" data-n="4"></span>
+      </div>
+
+      <div class="controls">
+        <button id="restartBtn" class="ctrl-btn ctrl-small" aria-label="Restart phase">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+        </button>
+        <button id="playPauseBtn" class="ctrl-btn ctrl-large" aria-label="Play">
+          <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="pauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+        </button>
+        <button id="skipBtn" class="ctrl-btn ctrl-small" aria-label="Skip">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l10 8-10 8V4z"/><rect x="16" y="4" width="2.4" height="16"/></svg>
+        </button>
+      </div>
+    </main>
+
+    <div id="liveRegion" class="sr-only" aria-live="polite"></div>
+    <audio id="bgMusic" loop preload="auto"></audio>
+  </div>
+
+  <div class="settings-overlay" id="settingsOverlay" hidden>
+    <div class="settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="settings-header">
+        <h2 id="settingsTitle">Settings</h2>
+        <button id="settingsClose" class="icon-btn" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div class="settings-section">
+        <h3>Durations</h3>
+        <div class="duration-row" data-type="focus">
+          <span class="d-label">Focus</span>
+          <div class="stepper">
+            <button class="step-btn" data-action="dec">&minus;</button>
+            <span class="d-value" data-value>25 min</span>
+            <button class="step-btn" data-action="inc">+</button>
+          </div>
+        </div>
+        <div class="duration-row" data-type="short">
+          <span class="d-label">Short Break</span>
+          <div class="stepper">
+            <button class="step-btn" data-action="dec">&minus;</button>
+            <span class="d-value" data-value>5 min</span>
+            <button class="step-btn" data-action="inc">+</button>
+          </div>
+        </div>
+        <div class="duration-row" data-type="long">
+          <span class="d-label">Long Break</span>
+          <div class="stepper">
+            <button class="step-btn" data-action="dec">&minus;</button>
+            <span class="d-value" data-value>15 min</span>
+            <button class="step-btn" data-action="inc">+</button>
+          </div>
+        </div>
+        <button id="resetDefaults" class="btn-text">Reset to defaults</button>
+      </div>
+
+      <div class="settings-section disabled" aria-disabled="true">
+        <h3>Theme <span class="badge">Coming soon</span></h3>
+      </div>
+
+      <div class="settings-section">
+        <h3>Sounds</h3>
+        <div id="chimeList" role="radiogroup" aria-label="Chime sound"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================================================
+     MODULE: CONFIG
+     ============================================================ */
+  var CONFIG = {
+    version: 1,
+    storageKey: "pomodoro.v1",
+    phases: {
+      focus: { label: "Focus",       default: 25, min: 10, max: 30, step: 1 },
+      short: { label: "Short Break", default: 5,  min: 1,  max: 15, step: 1 },
+      long:  { label: "Long Break",  default: 15, min: 5,  max: 30, step: 1 }
+    },
+    // one round = 4 focus sessions; n = which focus session in the round
+    sequence: [
+      { type: "focus", n: 1 },
+      { type: "short" },
+      { type: "focus", n: 2 },
+      { type: "short" },
+      { type: "focus", n: 3 },
+      { type: "short" },
+      { type: "focus", n: 4 },
+      { type: "long"  }
+    ],
+    tickIntervalMs: 250,
+
+    // Background music. Plays on loop the whole time the app is open
+    // (not tied to Focus/Break), on by default. Add more tracks here
+    // later - the first one is what plays until a picker exists.
+    music: {
+      tracks: [
+        { id: "all-for-nothing", name: "All For Nothing", src: "assets/audio/music/all-for-nothing.mp3" }
+      ]
+    },
+
+    // End-of-phase chime, picked in Settings -> Sounds.
+    chimes: {
+      options: [
+        { id: "bell", name: "Bell", src: "assets/audio/chimes/bell.mp3" },
+        { id: "gong", name: "Gong", src: "assets/audio/chimes/gong.mp3" }
+      ]
+    }
+  };
+
+  /* ============================================================
+     MODULE: Storage
+     ============================================================ */
+  var Storage = {
+    load: function(){
+      try{
+        var raw = localStorage.getItem(CONFIG.storageKey);
+        if(!raw) return null;
+        var parsed = JSON.parse(raw);
+        if(!parsed || parsed.version !== CONFIG.version) return null;
+        // Soft migration: older saves made before Sounds existed (or with
+        // options that no longer exist) won't have valid `settings` -
+        // backfill/repair instead of discarding durations/stats.
+        if(!parsed.settings){
+          parsed.settings = { musicEnabled: true, musicTrackId: null, chimeId: CONFIG.chimes.options[0].id };
+        }
+        var chimeStillValid = CONFIG.chimes.options.some(function(o){ return o.id === parsed.settings.chimeId; });
+        if(!chimeStillValid){
+          parsed.settings.chimeId = CONFIG.chimes.options[0].id;
+        }
+        return parsed;
+      }catch(e){ return null; }
+    },
+    save: function(state){
+      try{
+        localStorage.setItem(CONFIG.storageKey, JSON.stringify(state));
+      }catch(e){ /* storage unavailable (private mode, quota) - ignore */ }
+    }
+  };
+
+  /* ============================================================
+     MODULE: StateMachine (pure logic, no DOM)
+     ============================================================ */
+  function todayStr(){
+    var d = new Date();
+    var y = d.getFullYear();
+    var m = String(d.getMonth()+1).padStart(2,"0");
+    var day = String(d.getDate()).padStart(2,"0");
+    return y+"-"+m+"-"+day;
+  }
+
+  var StateMachine = {
+    createDefault: function(){
+      return {
+        version: CONFIG.version,
+        durations: {
+          focus: CONFIG.phases.focus.default,
+          short: CONFIG.phases.short.default,
+          long:  CONFIG.phases.long.default
+        },
+        seqIndex: 0,
+        running: false,
+        phaseEndsAt: null,
+        remainingMs: CONFIG.phases.focus.default * 60000,
+        stats: { date: todayStr(), count: 0 },
+        settings: { musicEnabled: true, musicTrackId: null, chimeId: CONFIG.chimes.options[0].id }
+      };
+    },
+
+    getPhaseType: function(state){
+      return CONFIG.sequence[state.seqIndex].type;
+    },
+
+    getFocusN: function(state){
+      var entry = CONFIG.sequence[state.seqIndex];
+      return entry.type === "focus" ? entry.n : null;
+    },
+
+    phaseDurationMs: function(state, type){
+      return state.durations[type] * 60000;
+    },
+
+    // Keeps today's count valid across a local-date rollover.
+    ensureStatsDate: function(state){
+      var t = todayStr();
+      if(state.stats.date !== t){
+        state.stats = { date: t, count: 0 };
+      }
+      return state;
+    },
+
+    // Moves to the next phase in the sequence. countStat = true means a
+    // focus session that just finished naturally (counts toward today's
+    // pomodoros); false means it was skipped (advances the cycle only).
+    advance: function(state, countStat){
+      var type = StateMachine.getPhaseType(state);
+      StateMachine.ensureStatsDate(state);
+      if(type === "focus" && countStat){
+        state.stats.count += 1;
+      }
+      state.seqIndex = (state.seqIndex + 1) % CONFIG.sequence.length;
+      var newType = StateMachine.getPhaseType(state);
+      state.remainingMs = StateMachine.phaseDurationMs(state, newType);
+      return state;
+    },
+
+    restartPhase: function(state){
+      var type = StateMachine.getPhaseType(state);
+      state.remainingMs = StateMachine.phaseDurationMs(state, type);
+      state.phaseEndsAt = state.running ? Date.now() + state.remainingMs : null;
+      return state;
+    },
+
+    // Dot status for each of the 4 focus slots in the current round,
+    // derived structurally from seqIndex so it self-resets each round.
+    getDots: function(state){
+      var type = StateMachine.getPhaseType(state);
+      var focusN = StateMachine.getFocusN(state);
+      var dots = [];
+      for(var n=1; n<=4; n++){
+        var pos = (n-1) * 2; // index of focus n within CONFIG.sequence
+        var status;
+        if(state.seqIndex > pos){
+          status = "completed";
+        }else if(type === "focus" && focusN === n){
+          status = "current";
+        }else{
+          status = "upcoming";
+        }
+        dots.push(status);
+      }
+      return dots;
+    }
+  };
+
+  /* ============================================================
+     MODULE: TimerEngine
+     ============================================================ */
+  var TimerEngine = {
+    // Walks the state forward through any phases that fully elapsed
+    // (e.g. while the tab was hidden/asleep), chaining off the previous
+    // phaseEndsAt to avoid drift. Returns how many phases were consumed
+    // so the caller can play the end sound exactly once.
+    catchUp: function(state){
+      var phasesElapsed = 0;
+      if(!state.running || state.phaseEndsAt == null) return phasesElapsed;
+      var now = Date.now();
+      var guard = 0;
+      while(state.phaseEndsAt != null && now >= state.phaseEndsAt && guard < 2000){
+        var prevEnd = state.phaseEndsAt;
+        StateMachine.advance(state, true); // time-based completion always counts
+        var newType = StateMachine.getPhaseType(state);
+        state.phaseEndsAt = prevEnd + StateMachine.phaseDurationMs(state, newType);
+        phasesElapsed++;
+        guard++;
+        now = Date.now();
+      }
+      return phasesElapsed;
+    },
+
+    remainingMs: function(state){
+      if(state.running && state.phaseEndsAt != null){
+        return Math.max(0, state.phaseEndsAt - Date.now());
+      }
+      return state.remainingMs;
+    },
+
+    play: function(state){
+      var rem = state.remainingMs != null ? state.remainingMs : StateMachine.phaseDurationMs(state, StateMachine.getPhaseType(state));
+      state.running = true;
+      state.phaseEndsAt = Date.now() + rem;
+      state.remainingMs = null;
+    },
+
+    pause: function(state){
+      state.remainingMs = TimerEngine.remainingMs(state);
+      state.running = false;
+      state.phaseEndsAt = null;
+    },
+
+    skip: function(state){
+      StateMachine.advance(state, false); // skipped: doesn't count toward stats
+      var newType = StateMachine.getPhaseType(state);
+      state.running = true; // skipping always auto-starts the next phase
+      state.phaseEndsAt = Date.now() + StateMachine.phaseDurationMs(state, newType);
+      state.remainingMs = null;
+    }
+  };
+
+  /* ============================================================
+     MODULE: Audio
+     ============================================================ */
+  var Audio = {
+    ctx: null,
+    musicEl: null,
+    _currentMusicSrc: null,
+
+    // Grabs the <audio> element reference. Safe with no user gesture -
+    // only .play() needs one, not reading the DOM.
+    init: function(){
+      Audio.musicEl = document.getElementById("bgMusic");
+    },
+
+    // Must be called from inside a click/tap handler - unlocks both the
+    // WebAudio fallback chime and the <audio> element on iOS.
+    unlock: function(){
+      if(!Audio.ctx){
+        try{
+          var AC = window.AudioContext || window.webkitAudioContext;
+          Audio.ctx = new AC();
+        }catch(e){ /* WebAudio unavailable - fallback chime just won't play */ }
+      }
+      if(Audio.ctx && Audio.ctx.state === "suspended"){
+        Audio.ctx.resume().catch(function(){});
+      }
+    },
+
+    // Two soft sine tones, ~0.8s total. Used only as a silent fallback if
+    // the selected chime file is missing or fails to play.
+    playDefaultChime: function(){
+      if(!Audio.ctx) return;
+      try{
+        var ctx = Audio.ctx;
+        var now = ctx.currentTime;
+        [ { freq: 880,  start: 0,    dur: 0.42 },
+          { freq: 1320, start: 0.30, dur: 0.5  } ].forEach(function(tone){
+          var osc = ctx.createOscillator();
+          var gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = tone.freq;
+          gain.gain.setValueAtTime(0, now + tone.start);
+          gain.gain.linearRampToValueAtTime(0.22, now + tone.start + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + tone.start + tone.dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + tone.start);
+          osc.stop(now + tone.start + tone.dur + 0.05);
+        });
+      }catch(e){ /* audio blocked - ignore */ }
+    },
+
+    // Plays whichever chime is selected in Settings (CONFIG.chimes.options).
+    // Falls back to the procedural tone if the file fails to load/play.
+    playChime: function(chimeId){
+      var opt = null;
+      for(var i=0;i<CONFIG.chimes.options.length;i++){
+        if(CONFIG.chimes.options[i].id === chimeId){ opt = CONFIG.chimes.options[i]; break; }
+      }
+      if(opt && opt.src){
+        try{
+          // "window.Audio" (not the local "Audio" module) - the <audio>
+          // constructor, for a short one-shot file-based sound.
+          var el = new window.Audio(opt.src);
+          el.play().catch(function(){ Audio.playDefaultChime(); });
+        }catch(e){ Audio.playDefaultChime(); }
+      }else{
+        Audio.playDefaultChime();
+      }
+    },
+
+    // --- Background music (independent of the timer - just loops
+    // whenever it's turned on) ---------------------------------------
+    setMusicTrack: function(src){
+      if(!Audio.musicEl || Audio._currentMusicSrc === src) return;
+      Audio._currentMusicSrc = src;
+      Audio.musicEl.src = src || "";
+    },
+    playMusic: function(){
+      if(!Audio.musicEl || !Audio.musicEl.src) return;
+      Audio.musicEl.play().catch(function(){ /* blocked until a gesture unlocks it - ignore */ });
+    },
+    pauseMusic: function(){
+      if(!Audio.musicEl) return;
+      Audio.musicEl.pause();
+    }
+  };
+
+  /* ============================================================
+     MODULE: UI
+     ============================================================ */
+  var UI = (function(){
+    var els = {};
+    var wakeLock = null;
+    var ringR = 122;
+    var ringCirc = 2 * Math.PI * ringR;
+
+    function cacheEls(){
+      els.body = document.body;
+      els.digits = document.getElementById("digits");
+      els.phaseLabel = document.getElementById("phaseLabel");
+      els.pomodoroCount = document.getElementById("pomodoroCount");
+      els.ringProgress = document.getElementById("ringProgress");
+      els.ringMarker = document.getElementById("ringMarker");
+      els.dots = Array.prototype.slice.call(document.querySelectorAll("#cyclePill .dot"));
+      els.playPauseBtn = document.getElementById("playPauseBtn");
+      els.playIcon = document.getElementById("playIcon");
+      els.pauseIcon = document.getElementById("pauseIcon");
+      els.restartBtn = document.getElementById("restartBtn");
+      els.skipBtn = document.getElementById("skipBtn");
+      els.menuBtn = document.getElementById("menuBtn");
+      els.musicBtn = document.getElementById("musicBtn");
+      els.settingsOverlay = document.getElementById("settingsOverlay");
+      els.settingsClose = document.getElementById("settingsClose");
+      els.resetDefaults = document.getElementById("resetDefaults");
+      els.liveRegion = document.getElementById("liveRegion");
+      els.chimeList = document.getElementById("chimeList");
+    }
+
+    function formatMMSS(ms){
+      var totalSec = Math.max(0, Math.ceil(ms/1000));
+      var m = Math.floor(totalSec/60);
+      var s = totalSec % 60;
+      return String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+    }
+
+    function renderRing(fraction){
+      var offset = ringCirc * (1 - fraction);
+      els.ringProgress.style.strokeDasharray = ringCirc;
+      els.ringProgress.style.strokeDashoffset = offset;
+      var angle = fraction * Math.PI * 2;
+      var cx = 150, cy = 150;
+      var mx = cx + ringR * Math.sin(angle);
+      var my = cy - ringR * Math.cos(angle);
+      els.ringMarker.setAttribute("cx", mx);
+      els.ringMarker.setAttribute("cy", my);
+    }
+
+    function renderDots(state){
+      var dots = StateMachine.getDots(state);
+      els.dots.forEach(function(el, i){
+        el.classList.remove("current","completed");
+        var status = dots[i];
+        if(status === "current") el.classList.add("current");
+        if(status === "completed") el.classList.add("completed");
+      });
+    }
+
+    function announce(text){
+      els.liveRegion.textContent = text;
+    }
+
+    function render(state, opts){
+      opts = opts || {};
+      var type = StateMachine.getPhaseType(state);
+      var total = StateMachine.phaseDurationMs(state, type);
+      var rem = TimerEngine.remainingMs(state);
+      var fraction = total > 0 ? rem / total : 0;
+
+      els.body.setAttribute("data-phase", type);
+      els.digits.textContent = formatMMSS(rem);
+      els.phaseLabel.textContent = CONFIG.phases[type].label;
+      renderRing(fraction);
+      renderDots(state);
+
+      var count = state.stats.count;
+      els.pomodoroCount.textContent = count + (count === 1 ? " pomodoro today" : " pomodoros today");
+
+      var playing = state.running;
+      els.playIcon.style.display = playing ? "none" : "";
+      els.pauseIcon.style.display = playing ? "" : "none";
+      els.playPauseBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+
+      document.title = playing
+        ? formatMMSS(rem) + " · " + CONFIG.phases[type].label
+        : "Pomodoro — Paused";
+
+      var musicOn = !!state.settings.musicEnabled;
+      els.musicBtn.classList.toggle("active", musicOn);
+      els.musicBtn.setAttribute("aria-pressed", String(musicOn));
+      els.musicBtn.setAttribute("aria-label", musicOn ? "Pause background music" : "Play background music");
+
+      if(opts.announcePhase){
+        announce(CONFIG.phases[type].label + " started");
+      }
+    }
+
+    function requestWakeLock(){
+      if(!("wakeLock" in navigator)) return;
+      navigator.wakeLock.request("screen").then(function(sentinel){
+        wakeLock = sentinel;
+      }).catch(function(){ /* unsupported / denied - fail silently */ });
+    }
+    function releaseWakeLock(){
+      if(wakeLock){
+        try{ wakeLock.release(); }catch(e){}
+        wakeLock = null;
+      }
+    }
+
+    return {
+      els: function(){ return els; },
+      cacheEls: cacheEls,
+      render: render,
+      announce: announce,
+      requestWakeLock: requestWakeLock,
+      releaseWakeLock: releaseWakeLock,
+      get wakeLock(){ return wakeLock; }
+    };
+  })();
+
+  /* ============================================================
+     MODULE: Settings
+     ============================================================ */
+  var Settings = (function(){
+    function refreshRows(state){
+      document.querySelectorAll(".duration-row").forEach(function(row){
+        var type = row.getAttribute("data-type");
+        var val = state.durations[type];
+        row.querySelector("[data-value]").textContent = val + " min";
+        var cfg = CONFIG.phases[type];
+        row.querySelector('[data-action="dec"]').disabled = val <= cfg.min;
+        row.querySelector('[data-action="inc"]').disabled = val >= cfg.max;
+      });
+    }
+
+    function setDuration(state, type, newVal){
+      var cfg = CONFIG.phases[type];
+      newVal = Math.min(cfg.max, Math.max(cfg.min, newVal));
+      var oldVal = state.durations[type];
+      if(newVal === oldVal) return state;
+
+      var currentType = StateMachine.getPhaseType(state);
+      var atFullDuration = !state.running && state.remainingMs === (oldVal * 60000);
+
+      state.durations[type] = newVal;
+
+      if(type === currentType && atFullDuration){
+        state.remainingMs = newVal * 60000;
+      }
+      return state;
+    }
+
+    function resetDefaults(state){
+      var currentType = StateMachine.getPhaseType(state);
+      Object.keys(CONFIG.phases).forEach(function(type){
+        var def = CONFIG.phases[type].default;
+        var oldVal = state.durations[type];
+        var atFullDuration = !state.running && state.remainingMs === (oldVal * 60000);
+        state.durations[type] = def;
+        if(type === currentType && atFullDuration){
+          state.remainingMs = def * 60000;
+        }
+      });
+      return state;
+    }
+
+    function renderSounds(state){
+      var els = UI.els();
+      els.chimeList.innerHTML = "";
+      CONFIG.chimes.options.forEach(function(opt){
+        var row = document.createElement("div");
+        row.className = "chime-option" + (state.settings.chimeId === opt.id ? " selected" : "");
+        row.setAttribute("data-chime-id", opt.id);
+        row.setAttribute("role", "radio");
+        row.setAttribute("aria-checked", String(state.settings.chimeId === opt.id));
+        var radio = document.createElement("span");
+        radio.className = "radio";
+        var name = document.createElement("span");
+        name.className = "c-name";
+        name.textContent = opt.name;
+        row.appendChild(radio);
+        row.appendChild(name);
+        els.chimeList.appendChild(row);
+      });
+    }
+
+    return { refreshRows: refreshRows, setDuration: setDuration, resetDefaults: resetDefaults, renderSounds: renderSounds };
+  })();
+
+  /* ============================================================
+     APP WIRING
+     ============================================================ */
+  var state = Storage.load() || StateMachine.createDefault();
+  StateMachine.ensureStatsDate(state);
+
+  function persist(){ Storage.save(state); }
+
+  // Picks the src for the music track to play - just the first one for
+  // now; this is where a future track picker would look up the choice.
+  function selectedTrackSrc(state){
+    if(!CONFIG.music.tracks.length) return null;
+    var id = state.settings.musicTrackId || CONFIG.music.tracks[0].id;
+    for(var i=0;i<CONFIG.music.tracks.length;i++){
+      if(CONFIG.music.tracks[i].id === id) return CONFIG.music.tracks[i].src;
+    }
+    return CONFIG.music.tracks[0].src;
+  }
+
+  // Background music is independent of the Pomodoro phases - it just
+  // loops continuously whenever it's turned on.
+  function syncMusic(state){
+    if(state.settings.musicEnabled && CONFIG.music.tracks.length > 0){
+      Audio.setMusicTrack(selectedTrackSrc(state));
+      Audio.playMusic();
+    }else{
+      Audio.pauseMusic();
+    }
+  }
+
+  function syncAndRender(opts){
+    StateMachine.ensureStatsDate(state);
+    var phasesElapsed = TimerEngine.catchUp(state);
+    UI.render(state, { announcePhase: !!(opts && opts.announcePhase) });
+    if(phasesElapsed > 0){
+      Audio.playChime(state.settings.chimeId);
+      UI.announce(CONFIG.phases[StateMachine.getPhaseType(state)].label + " started");
+    }
+    persist();
+    return phasesElapsed;
+  }
+
+  function tick(){
+    syncAndRender();
+  }
+
+  function onPlayPause(){
+    Audio.unlock(); // must happen inside the gesture handler for iOS
+    if(state.running){
+      TimerEngine.pause(state);
+      UI.releaseWakeLock();
+    }else{
+      TimerEngine.play(state);
+      UI.requestWakeLock();
+    }
+    UI.render(state);
+    persist();
+  }
+
+  function onRestart(){
+    StateMachine.restartPhase(state);
+    UI.render(state);
+    persist();
+  }
+
+  function onSkip(){
+    Audio.unlock();
+    TimerEngine.skip(state);
+    UI.requestWakeLock();
+    UI.render(state, { announcePhase: true });
+    persist();
+  }
+
+  function onToggleMusic(){
+    Audio.unlock(); // may be the gesture that unlocks <audio> on iOS
+    state.settings.musicEnabled = !state.settings.musicEnabled;
+    syncMusic(state);
+    UI.render(state);
+    persist();
+  }
+
+  function openSettings(){
+    var els = UI.els();
+    Settings.refreshRows(state);
+    Settings.renderSounds(state);
+    els.settingsOverlay.hidden = false;
+  }
+  function closeSettings(){
+    UI.els().settingsOverlay.hidden = true;
+  }
+
+  function wireEvents(){
+    var els = UI.els();
+
+    els.playPauseBtn.addEventListener("click", onPlayPause);
+    els.restartBtn.addEventListener("click", onRestart);
+    els.skipBtn.addEventListener("click", onSkip);
+
+    els.menuBtn.addEventListener("click", openSettings);
+    els.musicBtn.addEventListener("click", onToggleMusic);
+    els.settingsClose.addEventListener("click", closeSettings);
+    els.settingsOverlay.addEventListener("click", function(e){
+      if(e.target === els.settingsOverlay) closeSettings();
+    });
+    document.addEventListener("keydown", function(e){
+      if(e.key === "Escape" && !els.settingsOverlay.hidden){
+        closeSettings();
+        return;
+      }
+      // Avoid hijacking shortcuts while a settings control has focus.
+      if(!els.settingsOverlay.hidden) return;
+      if(e.key === " " || e.code === "Space"){
+        e.preventDefault();
+        onPlayPause();
+      }else if(e.key === "r" || e.key === "R"){
+        onRestart();
+      }else if(e.key === "s" || e.key === "S" || e.key === "ArrowRight"){
+        onSkip();
+      }
+    });
+
+    els.resetDefaults.addEventListener("click", function(){
+      Settings.resetDefaults(state);
+      Settings.refreshRows(state);
+      UI.render(state);
+      persist();
+    });
+
+    document.querySelectorAll(".duration-row").forEach(function(row){
+      var type = row.getAttribute("data-type");
+      var decBtn = row.querySelector('[data-action="dec"]');
+      var incBtn = row.querySelector('[data-action="inc"]');
+      if(!type || !decBtn || !incBtn) return; // defensive: skip anything that isn't a real duration row
+      decBtn.addEventListener("click", function(){
+        Settings.setDuration(state, type, state.durations[type] - CONFIG.phases[type].step);
+        Settings.refreshRows(state);
+        UI.render(state);
+        persist();
+      });
+      incBtn.addEventListener("click", function(){
+        Settings.setDuration(state, type, state.durations[type] + CONFIG.phases[type].step);
+        Settings.refreshRows(state);
+        UI.render(state);
+        persist();
+      });
+    });
+
+    els.chimeList.addEventListener("click", function(e){
+      var row = e.target.closest(".chime-option");
+      if(!row) return;
+      var id = row.getAttribute("data-chime-id");
+      if(id === state.settings.chimeId) return;
+      state.settings.chimeId = id;
+      Settings.renderSounds(state);
+      Audio.unlock();
+      Audio.playChime(id); // quick preview so picking a chime confirms itself
+      persist();
+    });
+
+    // Browsers block audio autoplay until the page has seen a real user
+    // gesture. Music is on by default, so the very first tap/click
+    // anywhere is what actually starts it (whichever button it lands on).
+    document.addEventListener("pointerdown", function(){
+      Audio.unlock();
+      syncMusic(state);
+    }, { once: true });
+
+    document.addEventListener("visibilitychange", function(){
+      if(document.visibilityState === "visible"){
+        syncAndRender();
+        if(state.running) UI.requestWakeLock();
+      }
+    });
+    window.addEventListener("focus", function(){
+      syncAndRender();
+    });
+    window.addEventListener("pageshow", function(){
+      syncAndRender();
+    });
+  }
+
+  function init(){
+    UI.cacheEls();
+    Audio.init();
+    wireEvents();
+    syncAndRender();
+    if(state.running) UI.requestWakeLock();
+    setInterval(tick, CONFIG.tickIntervalMs);
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", init);
+  }else{
+    init();
+  }
+})();
+</script>
+</body>
+</html>
+
+</body></html>
